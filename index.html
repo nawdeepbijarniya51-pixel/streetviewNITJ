@@ -184,11 +184,10 @@
         <div class="admin-section">
             <h3>💾 Export Data</h3>
             <button class="admin-btn" onclick="openExportModal()">📤 Export All Data</button>
-            <button class="admin-btn success" onclick="exportData()">💾 Backup Now</button>
         </div>
         <div class="admin-section">
-            <h3>📥 Import Data</h3>
-            <p style="font-size: 13px; color: #ccc; margin-bottom: 15px;">Restore from backup ZIP file</p>
+            <h3>📥 Admin Tools</h3>
+            <p style="font-size: 13px; color: #ccc; margin-bottom: 15px;">Import backup or reset data</p>
             <input type="file" id="importFile" accept=".zip" style="display:none;" onchange="handleImport(event)">
             <button class="admin-btn success" onclick="document.getElementById('importFile').click()">📥 Import Backup</button>
             <button class="admin-btn danger" onclick="clearAllData()" style="margin-top: 10px;">🗑️ Clear All Data</button>
@@ -225,17 +224,17 @@
     <div id="exportModal">
         <div class="export-container">
             <h3>📤 Export Data</h3>
+            <div class="export-option" onclick="exportForDeployment()">
+                <h4>🚀 Deployment Package</h4>
+                <p>Export ready-to-deploy files for GitHub Pages or any web host</p>
+            </div>
             <div class="export-option" onclick="exportAllData()">
-                <h4>📊 JSON Data + Images</h4>
-                <p>Export complete navigation data with all images</p>
+                <h4>📊 Full Backup (Admin)</h4>
+                <p>Complete backup with embedded images for admin use</p>
             </div>
             <div class="export-option" onclick="exportImagesOnly()">
-                <h4>🖼️ All Images Only</h4>
+                <h4>🖼️ Images Only</h4>
                 <p>Download all images as separate files</p>
-            </div>
-            <div class="export-option" onclick="exportStructureOnly()">
-                <h4>🗺️ Structure Only</h4>
-                <p>Export just the node connections (no images)</p>
             </div>
             <div style="text-align: center; margin-top: 20px;">
                 <button class="admin-btn danger" onclick="closeExportModal()">❌ Close</button>
@@ -271,29 +270,45 @@ async function init(){
             Object.keys(g).forEach(nodeId => {
                 if(g[nodeId].image && !g[nodeId].image.startsWith('data:')) {
                     // Image reference like "node_1.jpg" becomes "images/node_1.jpg"
-                    g[nodeId].image = `images/${g[nodeId].image}`;
+                    if(!g[nodeId].image.startsWith('images/')){
+                        g[nodeId].image = `images/${g[nodeId].image}`;
+                    }
                 }
             });
             
             // Set first node as current location
-            if(Object.keys(g).length > 0){
+            if(Object.keys(g).length > 0 && !loc){
                 loc = Object.keys(g)[0];
             }
             
-            console.log('Loaded from server:', Object.keys(g).length, 'nodes');
+            console.log('✅ Loaded from server:', Object.keys(g).length, 'nodes');
             
             // Save to local storage for offline use
             await localforage.setItem('campusNav', g);
             await localforage.setItem('nodeCounter', nCnt);
+            await localforage.setItem('loadedFromServer', true);
+        } else {
+            // No server file, check local storage
+            throw new Error('No campus_data.json found');
         }
     } catch(err) {
-        console.log('No server data, checking local storage...');
+        console.log('No server data found, checking local storage...');
+        
+        // Check if we previously loaded from server
+        const wasLoadedFromServer = await localforage.getItem('loadedFromServer');
         
         // Fallback to local storage
         const localData = await localforage.getItem('campusNav');
-        if(localData){
+        if(localData && Object.keys(localData).length > 0){
             g = localData;
-            console.log('Loaded from local storage');
+            console.log('✅ Loaded from local storage:', Object.keys(g).length, 'nodes');
+            
+            if(!loc){
+                loc = Object.keys(g)[0];
+            }
+        } else if(!wasLoadedFromServer) {
+            // Only show empty state if never loaded from server
+            console.log('ℹ️ No data - starting empty for admin to create nodes');
         }
         
         const localCounter = await localforage.getItem('nodeCounter');
