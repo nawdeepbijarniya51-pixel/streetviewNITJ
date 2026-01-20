@@ -177,6 +177,11 @@
             <button class="admin-btn success" onclick="addNewNode()">Create</button>
         </div>
         <div class="admin-section">
+            <h3>🗑️ Delete Current Node</h3>
+            <p style="font-size: 13px; color: #ff6b6b; margin-bottom: 10px;">⚠️ This will permanently delete node: <span id="deleteNodeId" style="font-weight: bold;">-</span></p>
+            <button class="admin-btn danger" onclick="deleteCurrentNode()">🗑️ Delete Node</button>
+        </div>
+        <div class="admin-section">
             <h3>💾 Export Data</h3>
             <button class="admin-btn" onclick="openExportModal()">📤 Export All Data</button>
             <button class="admin-btn success" onclick="exportData()">💾 Backup Now</button>
@@ -289,7 +294,7 @@ function closeCamera(){if(cam){cam.getTracks().forEach(t=>t.stop());cam=null;}el
 function openAdminPanel(){document.getElementById('passwordModal').classList.add('active');document.getElementById('passwordInput').value='';document.getElementById('passwordError').style.display='none';document.getElementById('passwordInput').focus();}
 function closePasswordModal(){document.getElementById('passwordModal').classList.remove('active');}
 function checkPassword(){const pwd=document.getElementById('passwordInput').value;if(pwd==='Nawd@9950'){document.getElementById('passwordModal').classList.remove('active');el.adminP.classList.add('open');document.getElementById('passwordInput').value='';}else{document.getElementById('passwordError').style.display='block';document.getElementById('passwordInput').value='';document.getElementById('passwordInput').focus();}}
-function updateAdminPanel(){document.getElementById('adminCurrentLocation').textContent=loc;const n=g[loc];updateDirStatus('forward',n.forward);updateDirStatus('backward',n.backward);updateDirStatus('left',n.left);updateDirStatus('right',n.right);document.getElementById('forwardInput').value=n.forward||'';document.getElementById('backwardInput').value=n.backward||'';document.getElementById('leftInput').value=n.left||'';document.getElementById('rightInput').value=n.right||'';}
+function updateAdminPanel(){document.getElementById('adminCurrentLocation').textContent=loc;document.getElementById('deleteNodeId').textContent=loc;const n=g[loc];updateDirStatus('forward',n.forward);updateDirStatus('backward',n.backward);updateDirStatus('left',n.left);updateDirStatus('right',n.right);document.getElementById('forwardInput').value=n.forward||'';document.getElementById('backwardInput').value=n.backward||'';document.getElementById('leftInput').value=n.left||'';document.getElementById('rightInput').value=n.right||'';}
 function updateDirStatus(d,l){const s=document.getElementById(`${d}Status`);s.innerHTML=l?`<div class="current-link">✅ ${l}</div>`:`<div class="no-link-indicator">❌ No link</div>`;}
 function setDirection(d){const t=document.getElementById(`${d}Input`).value.trim();if(!t){showStatus('Enter ID','error');return;}if(!g[t]){showStatus('Node not found','error');return;}g[loc][d]=t;save();updateView();showStatus(`${d} set to ${t}`,'success');}
 function removeDirection(d){g[loc][d]=null;save();updateView();showStatus(`${d} removed`,'success');}
@@ -307,6 +312,39 @@ function addNewNode(){
     document.getElementById('newNodeId').value='';
     document.getElementById('newNodeImage').value='';
     showStatus(`Created ${id}`,'success');
+}
+
+function deleteCurrentNode(){
+    if(!confirm(`Are you sure you want to delete node "${loc}"?\n\nThis action cannot be undone.`)){
+        return;
+    }
+    
+    if(Object.keys(g).length <= 1){
+        showStatus('Cannot delete the last node!','error');
+        return;
+    }
+    
+    const nodeToDelete = loc;
+    
+    Object.keys(g).forEach(nodeId => {
+        if(g[nodeId].forward === nodeToDelete) g[nodeId].forward = null;
+        if(g[nodeId].backward === nodeToDelete) g[nodeId].backward = null;
+        if(g[nodeId].left === nodeToDelete) g[nodeId].left = null;
+        if(g[nodeId].right === nodeToDelete) g[nodeId].right = null;
+    });
+    
+    delete g[nodeToDelete];
+    
+    if(g["1"]){
+        loc = "1";
+    }else{
+        loc = Object.keys(g)[0];
+    }
+    
+    save();
+    updateView();
+    updateNodeList();
+    showStatus(`Deleted node: ${nodeToDelete}`, 'success');
 }
 
 function updateNodeList(){const nl=document.getElementById('nodeList');nl.innerHTML='';Object.keys(g).sort().forEach(id=>{const d=document.createElement('div');d.className='node-item';d.textContent=`Node ${id}`;d.onclick=()=>{loc=id;updateView();showStatus(`→ ${id}`,'success');};nl.appendChild(d);});}
@@ -380,14 +418,11 @@ function closeExportModal(){
 }
 
 function exportAllData(){
-    // Create a clean copy without circular references
     const exportData = JSON.parse(JSON.stringify(g));
     
-    // Create a zip file with all data
     const dataStr = JSON.stringify(exportData, null, 2);
     const dataBlob = new Blob([dataStr], {type: 'application/json'});
     
-    // Download JSON
     const a = document.createElement('a');
     a.href = URL.createObjectURL(dataBlob);
     a.download = `campus_nav_${Date.now()}.json`;
@@ -395,7 +430,6 @@ function exportAllData(){
     a.click();
     document.body.removeChild(a);
     
-    // Also extract and save images
     extractAndSaveImages();
     
     showStatus('All data exported successfully!', 'success');
@@ -409,7 +443,6 @@ function exportImagesOnly(){
 }
 
 function exportStructureOnly(){
-    // Create structure-only export (replace image data with filenames)
     const structureData = {};
     Object.keys(g).forEach(key => {
         structureData[key] = {
@@ -436,11 +469,9 @@ function exportStructureOnly(){
 }
 
 function extractAndSaveImages(){
-    // Extract all data URLs and save them as image files
     Object.keys(g).forEach(nodeId => {
         const imageData = g[nodeId].image;
         if(imageData.startsWith('data:image/')) {
-            // Convert data URL to blob
             const byteString = atob(imageData.split(',')[1]);
             const mimeString = imageData.split(',')[0].split(':')[1].split(';')[0];
             const ab = new ArrayBuffer(byteString.length);
@@ -450,7 +481,6 @@ function extractAndSaveImages(){
             }
             const blob = new Blob([ab], {type: mimeString});
             
-            // Create download link
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
             a.download = `${nodeId}_image.jpg`;
@@ -458,14 +488,12 @@ function extractAndSaveImages(){
             a.click();
             document.body.removeChild(a);
             
-            // Clean up
             setTimeout(() => URL.revokeObjectURL(a.href), 100);
         }
     });
 }
 
 function exportData(){
-    // Simple backup export
     const backup = {
         graph: g,
         nodeCounter: nCnt,
