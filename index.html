@@ -237,12 +237,9 @@
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
     <script>
-let g={},loc="1",nCnt=1000,preloadedImages={},cam=null,capData=null,capMode=null,capDir=null;
+let g={},loc=null,nCnt=1,preloadedImages={},cam=null,capData=null,capMode=null,capDir=null;
 let uploadMode=null,uploadDir=null;
 const el={img:document.getElementById('currentImage'),locId:document.getElementById('locationId'),load:document.getElementById('loading'),fwd:document.getElementById('forwardBtn'),bwd:document.getElementById('backwardBtn'),left:document.getElementById('leftBtn'),right:document.getElementById('rightBtn'),adminP:document.getElementById('adminPanel'),adminT:document.getElementById('adminToggle'),preload:document.getElementById('preloadContainer'),camM:document.getElementById('cameraModal'),camV:document.getElementById('cameraVideo'),capC:document.getElementById('capturedCanvas'),capP:document.getElementById('capturedPreview')};
-
-// Initial graph data - using local images from images folder
-for(let i=1;i<=10;i++)g[String(i)]={image:`images/${i}.jpeg`,forward:i<10?String(i+1):null,backward:i>1?String(i-1):null,left:null,right:null};
 
 function preloadImage(src){if(!src||preloadedImages[src])return;const img=new Image();img.src=src;preloadedImages[src]=img;el.preload.appendChild(img);}
 function preloadAdjacentImages(){const n=g[loc];if(!n)return;if(n.forward&&g[n.forward])preloadImage(g[n.forward].image);if(n.backward&&g[n.backward])preloadImage(g[n.backward].image);if(n.left&&g[n.left])preloadImage(g[n.left].image);if(n.right&&g[n.right])preloadImage(g[n.right].image);}
@@ -251,13 +248,33 @@ async function init(){
     localforage.getItem('nodeCounter').then(c=>{if(c)nCnt=c;});
     attachListeners();
 }
-function updateView(){const n=g[loc];if(!n)return;if(preloadedImages[n.image]){el.img.src=n.image;el.load.style.display='none';el.img.style.display='block';}else{el.load.style.display='block';el.img.style.display='none';el.img.onload=()=>{el.load.style.display='none';el.img.style.display='block';preloadedImages[n.image]=el.img;};el.img.onerror=()=>el.load.textContent='Error';el.img.src=n.image;}el.locId.textContent=loc;updateBtn(el.fwd,n.forward);updateBtn(el.bwd,n.backward);updateBtn(el.left,n.left);updateBtn(el.right,n.right);updateAdminPanel();preloadAdjacentImages();}
+function updateView(){
+    const n=g[loc];
+    if(!n){
+        el.load.style.display='block';
+        el.load.textContent='No nodes yet. Open Admin Panel to add nodes.';
+        el.img.style.display='none';
+        el.locId.textContent='-';
+        el.fwd.disabled=true;
+        el.bwd.disabled=true;
+        el.left.disabled=true;
+        el.right.disabled=true;
+        return;
+    }
+    if(preloadedImages[n.image]){el.img.src=n.image;el.load.style.display='none';el.img.style.display='block';}else{el.load.style.display='block';el.img.style.display='none';el.img.onload=()=>{el.load.style.display='none';el.img.style.display='block';preloadedImages[n.image]=el.img;};el.img.onerror=()=>el.load.textContent='Error';el.img.src=n.image;}el.locId.textContent=loc;updateBtn(el.fwd,n.forward);updateBtn(el.bwd,n.backward);updateBtn(el.left,n.left);updateBtn(el.right,n.right);updateAdminPanel();preloadAdjacentImages();
+}
 function updateBtn(b,h){b.disabled=!h;}
 function nav(d){const n=g[loc][d];if(n&&g[n]){loc=n;updateView();}}
 function attachListeners(){el.fwd.onclick=()=>nav('forward');el.bwd.onclick=()=>nav('backward');el.left.onclick=()=>nav('left');el.right.onclick=()=>nav('right');el.adminT.onclick=()=>openAdminPanel();document.onkeydown=e=>{if(e.key==='Escape'&&el.adminP.classList.contains('open')){el.adminP.classList.remove('open');return;}if(e.key==='Escape'&&document.getElementById('passwordModal').classList.contains('active')){closePasswordModal();return;}if(e.key==='Escape'&&el.camM.classList.contains('active')){closeCamera();return;}if(el.adminP.classList.contains('open')||document.getElementById('passwordModal').classList.contains('active')||el.camM.classList.contains('active'))return;if(['ArrowUp','w','W'].includes(e.key)&&!el.fwd.disabled)nav('forward');if(['ArrowDown','s','S'].includes(e.key)&&!el.bwd.disabled)nav('backward');if(['ArrowLeft','a','A'].includes(e.key)&&!el.left.disabled)nav('left');if(['ArrowRight','d','D'].includes(e.key)&&!el.right.disabled)nav('right');};}
 
 // Camera functions
-async function openCameraForDirection(d){capMode='direction';capDir=d;document.getElementById('cameraTitle').textContent=`📷 Capture ${d.toUpperCase()}`;await openCamera();}
+async function openCameraForDirection(d){
+    if(!loc){showStatus('No current node to add direction from','error');return;}
+    capMode='direction';
+    capDir=d;
+    document.getElementById('cameraTitle').textContent=`📷 Capture ${d.toUpperCase()}`;
+    await openCamera();
+}
 async function openCameraForNewNode(){capMode='newNode';capDir=null;document.getElementById('cameraTitle').textContent='📷 Capture New Node';await openCamera();}
 async function openCamera(){try{cam=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:1920,height:1080}});el.camV.srcObject=cam;el.camM.classList.add('active');el.capP.style.display='none';el.camV.style.display='block';document.getElementById('captureBtn').style.display='inline-block';document.getElementById('retakeBtn').style.display='none';document.getElementById('useCaptureBtn').style.display='none';capData=null;}catch(e){showStatus('Camera error - use upload instead','error');console.error(e);}}
 function captureImage(){el.capC.width=el.camV.videoWidth;el.capC.height=el.camV.videoHeight;const ctx=el.capC.getContext('2d');ctx.drawImage(el.camV,0,0);const maxSize=1200;let width=el.capC.width;let height=el.capC.height;if(width>maxSize||height>maxSize){const canvas2=document.createElement('canvas');if(width>height){canvas2.height=(height/width)*maxSize;canvas2.width=maxSize;}else{canvas2.width=(width/height)*maxSize;canvas2.height=maxSize;}canvas2.getContext('2d').drawImage(el.capC,0,0,canvas2.width,canvas2.height);capData=canvas2.toDataURL('image/jpeg',0.85);}else{capData=el.capC.toDataURL('image/jpeg',0.85);}el.capP.src=capData;el.camV.style.display='none';el.capP.style.display='block';document.getElementById('captureBtn').style.display='none';document.getElementById('retakeBtn').style.display='inline-block';document.getElementById('useCaptureBtn').style.display='inline-block';}
@@ -269,6 +286,7 @@ function useCapturedImage(){
     localforage.setItem('nodeCounter',nCnt);
     
     if(capMode==='direction'){
+        if(!loc){showStatus('No current node to add direction from','error');closeCamera();return;}
         g[nid]={image:capData,forward:null,backward:null,left:null,right:null};
         g[loc][capDir]=nid;
         const rev={'forward':'backward','backward':'forward','left':'right','right':'left'};
@@ -279,9 +297,11 @@ function useCapturedImage(){
         showStatus(`${capDir} created: ${nid}`,'success');
     }else if(capMode==='newNode'){
         g[nid]={image:capData,forward:null,backward:null,left:null,right:null};
+        if(!loc){loc=nid;}
         document.getElementById('newNodeId').value=nid;
         document.getElementById('newNodeImage').value='Captured';
         save();
+        updateView();
         updateNodeList();
         showStatus(`Created: ${nid}`,'success');
     }
@@ -294,7 +314,30 @@ function closeCamera(){if(cam){cam.getTracks().forEach(t=>t.stop());cam=null;}el
 function openAdminPanel(){document.getElementById('passwordModal').classList.add('active');document.getElementById('passwordInput').value='';document.getElementById('passwordError').style.display='none';document.getElementById('passwordInput').focus();}
 function closePasswordModal(){document.getElementById('passwordModal').classList.remove('active');}
 function checkPassword(){const pwd=document.getElementById('passwordInput').value;if(pwd==='Nawd@9950'){document.getElementById('passwordModal').classList.remove('active');el.adminP.classList.add('open');document.getElementById('passwordInput').value='';}else{document.getElementById('passwordError').style.display='block';document.getElementById('passwordInput').value='';document.getElementById('passwordInput').focus();}}
-function updateAdminPanel(){document.getElementById('adminCurrentLocation').textContent=loc;document.getElementById('deleteNodeId').textContent=loc;const n=g[loc];updateDirStatus('forward',n.forward);updateDirStatus('backward',n.backward);updateDirStatus('left',n.left);updateDirStatus('right',n.right);document.getElementById('forwardInput').value=n.forward||'';document.getElementById('backwardInput').value=n.backward||'';document.getElementById('leftInput').value=n.left||'';document.getElementById('rightInput').value=n.right||'';}
+function updateAdminPanel(){
+    document.getElementById('adminCurrentLocation').textContent=loc || 'None';
+    document.getElementById('deleteNodeId').textContent=loc || 'None';
+    if(!loc || !g[loc]){
+        updateDirStatus('forward',null);
+        updateDirStatus('backward',null);
+        updateDirStatus('left',null);
+        updateDirStatus('right',null);
+        document.getElementById('forwardInput').value='';
+        document.getElementById('backwardInput').value='';
+        document.getElementById('leftInput').value='';
+        document.getElementById('rightInput').value='';
+        return;
+    }
+    const n=g[loc];
+    updateDirStatus('forward',n.forward);
+    updateDirStatus('backward',n.backward);
+    updateDirStatus('left',n.left);
+    updateDirStatus('right',n.right);
+    document.getElementById('forwardInput').value=n.forward||'';
+    document.getElementById('backwardInput').value=n.backward||'';
+    document.getElementById('leftInput').value=n.left||'';
+    document.getElementById('rightInput').value=n.right||'';
+}
 function updateDirStatus(d,l){const s=document.getElementById(`${d}Status`);s.innerHTML=l?`<div class="current-link">✅ ${l}</div>`:`<div class="no-link-indicator">❌ No link</div>`;}
 function setDirection(d){const t=document.getElementById(`${d}Input`).value.trim();if(!t){showStatus('Enter ID','error');return;}if(!g[t]){showStatus('Node not found','error');return;}g[loc][d]=t;save();updateView();showStatus(`${d} set to ${t}`,'success');}
 function removeDirection(d){g[loc][d]=null;save();updateView();showStatus(`${d} removed`,'success');}
@@ -307,7 +350,14 @@ function addNewNode(){
     if(!img){showStatus('Upload image','error');return;}
     
     g[id]={image:img,forward:null,backward:null,left:null,right:null};
+    
+    // If this is the first node, set it as current location
+    if(!loc){
+        loc = id;
+    }
+    
     save();
+    updateView();
     updateNodeList();
     document.getElementById('newNodeId').value='';
     document.getElementById('newNodeImage').value='';
@@ -315,6 +365,7 @@ function addNewNode(){
 }
 
 function deleteCurrentNode(){
+    if(!loc){showStatus('No node to delete','error');return;}
     if(!confirm(`Are you sure you want to delete node "${loc}"?\n\nThis action cannot be undone.`)){
         return;
     }
@@ -335,11 +386,7 @@ function deleteCurrentNode(){
     
     delete g[nodeToDelete];
     
-    if(g["1"]){
-        loc = "1";
-    }else{
-        loc = Object.keys(g)[0];
-    }
+    loc = Object.keys(g)[0] || null;
     
     save();
     updateView();
@@ -352,7 +399,12 @@ function save(){localforage.setItem('campusNav',g);}
 function showStatus(m,t){const s=document.getElementById('statusMessage');s.textContent=m;s.className=`status-message ${t}`;s.style.display='block';setTimeout(()=>s.style.display='none',4000);}
 
 // File upload functions
-function uploadForDirection(d){uploadMode='direction';uploadDir=d;document.getElementById('fileUpload').click();}
+function uploadForDirection(d){
+    if(!loc){showStatus('No current node to add direction from','error');return;}
+    uploadMode='direction';
+    uploadDir=d;
+    document.getElementById('fileUpload').click();
+}
 function uploadForNewNode(){uploadMode='newNode';uploadDir=null;document.getElementById('fileUpload').click();}
 
 function handleFileUpload(e){
@@ -385,6 +437,7 @@ function handleFileUpload(e){
             localforage.setItem('nodeCounter',nCnt);
             
             if(uploadMode==='direction'){
+                if(!loc){showStatus('No current node','error');return;}
                 g[nid]={image:imgData,forward:null,backward:null,left:null,right:null};
                 g[loc][uploadDir]=nid;
                 const rev={'forward':'backward','backward':'forward','left':'right','right':'left'};
@@ -395,9 +448,11 @@ function handleFileUpload(e){
                 showStatus(`${uploadDir} created: ${nid}`,'success');
             }else if(uploadMode==='newNode'){
                 g[nid]={image:imgData,forward:null,backward:null,left:null,right:null};
+                if(!loc){loc=nid;}
                 document.getElementById('newNodeId').value=nid;
                 document.getElementById('newNodeImage').value='Uploaded';
                 save();
+                updateView();
                 updateNodeList();
                 showStatus(`Created: ${nid}`,'success');
             }
