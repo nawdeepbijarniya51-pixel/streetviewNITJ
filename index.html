@@ -186,6 +186,13 @@
             <button class="admin-btn" onclick="openExportModal()">📤 Export All Data</button>
             <button class="admin-btn success" onclick="exportData()">💾 Backup Now</button>
         </div>
+        <div class="admin-section">
+            <h3>📥 Import Data</h3>
+            <p style="font-size: 13px; color: #ccc; margin-bottom: 15px;">Restore from backup ZIP file</p>
+            <input type="file" id="importFile" accept=".zip" style="display:none;" onchange="handleImport(event)">
+            <button class="admin-btn success" onclick="document.getElementById('importFile').click()">📥 Import Backup</button>
+            <button class="admin-btn danger" onclick="clearAllData()" style="margin-top: 10px;">🗑️ Clear All Data</button>
+        </div>
         <div class="admin-section"><h3>📋 All Nodes</h3><div class="node-list" id="nodeList"></div></div>
         <div id="statusMessage" class="status-message"></div>
     </div>
@@ -236,6 +243,8 @@
         </div>
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script>
 let g={},loc=null,nCnt=1,preloadedImages={},cam=null,capData=null,capMode=null,capDir=null;
 let uploadMode=null,uploadDir=null;
@@ -244,8 +253,59 @@ const el={img:document.getElementById('currentImage'),locId:document.getElementB
 function preloadImage(src){if(!src||preloadedImages[src])return;const img=new Image();img.src=src;preloadedImages[src]=img;el.preload.appendChild(img);}
 function preloadAdjacentImages(){const n=g[loc];if(!n)return;if(n.forward&&g[n.forward])preloadImage(g[n.forward].image);if(n.backward&&g[n.backward])preloadImage(g[n.backward].image);if(n.left&&g[n.left])preloadImage(g[n.left].image);if(n.right&&g[n.right])preloadImage(g[n.right].image);}
 async function init(){
-    localforage.getItem('campusNav').then(d=>{if(d){g=d;console.log('Loaded');}updateView();updateAdminPanel();updateNodeList();preloadAdjacentImages();});
-    localforage.getItem('nodeCounter').then(c=>{if(c)nCnt=c;});
+    // First try to load from server (GitHub deployment)
+    try {
+        const response = await fetch('campus_data.json');
+        if(response.ok){
+            const serverData = await response.json();
+            
+            // Check if it's a full backup or just graph data
+            if(serverData.graph){
+                g = serverData.graph;
+                nCnt = serverData.nodeCounter || 1;
+            } else {
+                g = serverData;
+            }
+            
+            // Convert image paths to use the deployed images folder
+            Object.keys(g).forEach(nodeId => {
+                if(g[nodeId].image && !g[nodeId].image.startsWith('data:')) {
+                    // Image reference like "node_1.jpg" becomes "images/node_1.jpg"
+                    g[nodeId].image = `images/${g[nodeId].image}`;
+                }
+            });
+            
+            // Set first node as current location
+            if(Object.keys(g).length > 0){
+                loc = Object.keys(g)[0];
+            }
+            
+            console.log('Loaded from server:', Object.keys(g).length, 'nodes');
+            
+            // Save to local storage for offline use
+            await localforage.setItem('campusNav', g);
+            await localforage.setItem('nodeCounter', nCnt);
+        }
+    } catch(err) {
+        console.log('No server data, checking local storage...');
+        
+        // Fallback to local storage
+        const localData = await localforage.getItem('campusNav');
+        if(localData){
+            g = localData;
+            console.log('Loaded from local storage');
+        }
+        
+        const localCounter = await localforage.getItem('nodeCounter');
+        if(localCounter){
+            nCnt = localCounter;
+        }
+    }
+    
+    updateView();
+    updateAdminPanel();
+    updateNodeList();
+    preloadAdjacentImages();
     attachListeners();
 }
 function updateView(){
@@ -475,76 +535,132 @@ function closeExportModal(){
 function exportAllData(){
     const exportData = JSON.parse(JSON.stringify(g));
     
+    // Create a zip file
+    const zip = new JSZip();
+    
+    // Add JSON data
     const dataStr = JSON.stringify(exportData, null, 2);
-    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+    zip.file('campus_nav_data.json', dataStr);
     
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(dataBlob);
-    a.download = `campus_nav_${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    // Create images folder
+    const imagesFolder = zip.folder('images');
     
-    extractAndSaveImages();
-    
-    showStatus('All data exported successfully!', 'success');
-    closeExportModal();
-}
-
-function exportImagesOnly(){
-    extractAndSaveImages();
-    showStatus('All images exported!', 'success');
-    closeExportModal();
-}
-
-function exportStructureOnly(){
-    const structureData = {};
-    Object.keys(g).forEach(key => {
-        structureData[key] = {
-            forward: g[key].forward,
-            backward: g[key].backward,
-            left: g[key].left,
-            right: g[key].right,
-            image: g[key].image.startsWith('data:') ? 'data_image.jpg' : g[key].image
-        };
-    });
-    
-    const dataStr = JSON.stringify(structureData, null, 2);
-    const dataBlob = new Blob([dataStr], {type: 'application/json'});
-    
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(dataBlob);
-    a.download = `campus_structure_${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    
-    showStatus('Structure exported!', 'success');
-    closeExportModal();
-}
-
-function extractAndSaveImages(){
+    // Add all images to the folder
     Object.keys(g).forEach(nodeId => {
         const imageData = g[nodeId].image;
         if(imageData.startsWith('data:image/')) {
-            const byteString = atob(imageData.split(',')[1]);
-            const mimeString = imageData.split(',')[0].split(':')[1].split(';')[0];
-            const ab = new ArrayBuffer(byteString.length);
-            const ia = new Uint8Array(ab);
-            for (let i = 0; i < byteString.length; i++) {
-                ia[i] = byteString.charCodeAt(i);
-            }
-            const blob = new Blob([ab], {type: mimeString});
-            
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `${nodeId}_image.jpg`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            
-            setTimeout(() => URL.revokeObjectURL(a.href), 100);
+            // Extract base64 data
+            const base64Data = imageData.split(',')[1];
+            imagesFolder.file(`${nodeId}.jpg`, base64Data, {base64: true});
         }
+    });
+    
+    // Generate and download zip
+    zip.generateAsync({type: 'blob'}).then(function(content) {
+        saveAs(content, `campus_navigation_${Date.now()}.zip`);
+        showStatus('All data exported successfully!', 'success');
+        closeExportModal();
+    });
+}
+
+function exportImagesOnly(){
+    const zip = new JSZip();
+    const imagesFolder = zip.folder('campus_images');
+    
+    // Add all images to the folder
+    Object.keys(g).forEach(nodeId => {
+        const imageData = g[nodeId].image;
+        if(imageData.startsWith('data:image/')) {
+            const base64Data = imageData.split(',')[1];
+            imagesFolder.file(`${nodeId}.jpg`, base64Data, {base64: true});
+        }
+    });
+    
+    // Generate and download zip
+    zip.generateAsync({type: 'blob'}).then(function(content) {
+        saveAs(content, `campus_images_${Date.now()}.zip`);
+        showStatus('All images exported!', 'success');
+        closeExportModal();
+    });
+}
+
+function exportForDeployment(){
+    const deploymentData = {};
+    
+    // Create structure with relative image paths
+    Object.keys(g).forEach(nodeId => {
+        deploymentData[nodeId] = {
+            forward: g[nodeId].forward,
+            backward: g[nodeId].backward,
+            left: g[nodeId].left,
+            right: g[nodeId].right,
+            image: `${nodeId}.jpg`  // Just the filename
+        };
+    });
+    
+    const zip = new JSZip();
+    
+    // Add the JSON file for deployment
+    const jsonStr = JSON.stringify(deploymentData, null, 2);
+    zip.file('campus_data.json', jsonStr);
+    
+    // Create images folder with all images
+    const imagesFolder = zip.folder('images');
+    Object.keys(g).forEach(nodeId => {
+        const imageData = g[nodeId].image;
+        if(imageData.startsWith('data:image/')) {
+            const base64Data = imageData.split(',')[1];
+            imagesFolder.file(`${nodeId}.jpg`, base64Data, {base64: true});
+        }
+    });
+    
+    // Add README with instructions
+    const readme = `# Campus Navigation System - Deployment Package
+
+## 📁 Files Included:
+- campus_data.json (navigation structure)
+- images/ (folder with all node images)
+- index.html (your main HTML file)
+
+## 🚀 How to Deploy:
+
+### Option 1: GitHub Pages
+1. Create a new GitHub repository
+2. Upload these files:
+   - index.html (your navigation system file)
+   - campus_data.json
+   - images/ (entire folder)
+3. Go to Settings → Pages
+4. Select main branch → Save
+5. Your site will be live at: https://username.github.io/repo-name
+
+### Option 2: Any Web Host
+1. Upload all files to your web server
+2. Keep the folder structure:
+   /index.html
+   /campus_data.json
+   /images/
+     - node_1.jpg
+     - node_2.jpg
+     - etc.
+
+## 📝 Notes:
+- Users will automatically load the navigation data
+- No import needed - it just works!
+- Admin panel still available for updates (password protected)
+- Data is cached locally for offline use
+
+Generated: ${new Date().toISOString()}
+Total Nodes: ${Object.keys(g).length}
+`;
+    
+    zip.file('README.md', readme);
+    
+    // Generate and download
+    zip.generateAsync({type: 'blob'}).then(function(content) {
+        saveAs(content, `campus_deployment_${Date.now()}.zip`);
+        showStatus('Deployment package created! See README for instructions.', 'success');
+        closeExportModal();
     });
 }
 
@@ -555,17 +671,131 @@ function exportData(){
         exportDate: new Date().toISOString()
     };
     
+    const zip = new JSZip();
+    
+    // Add JSON backup
     const dataStr = JSON.stringify(backup, null, 2);
-    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+    zip.file('campus_backup.json', dataStr);
     
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(dataBlob);
-    a.download = `campus_backup_${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    // Create images folder
+    const imagesFolder = zip.folder('images');
     
-    showStatus('Backup created!', 'success');
+    // Add all images
+    Object.keys(g).forEach(nodeId => {
+        const imageData = g[nodeId].image;
+        if(imageData.startsWith('data:image/')) {
+            const base64Data = imageData.split(',')[1];
+            imagesFolder.file(`${nodeId}.jpg`, base64Data, {base64: true});
+        }
+    });
+    
+    // Generate and download zip
+    zip.generateAsync({type: 'blob'}).then(function(content) {
+        saveAs(content, `campus_backup_${Date.now()}.zip`);
+        showStatus('Backup created!', 'success');
+    });
+}
+
+async function handleImport(e){
+    const file = e.target.files[0];
+    if(!file){return;}
+    
+    try {
+        const zip = await JSZip.loadAsync(file);
+        
+        // Read the JSON file
+        let jsonData = null;
+        const jsonFile = zip.file('campus_backup.json') || zip.file('campus_nav_data.json');
+        
+        if(!jsonFile){
+            showStatus('No backup JSON found in ZIP','error');
+            e.target.value = '';
+            return;
+        }
+        
+        const jsonText = await jsonFile.async('string');
+        const importedData = JSON.parse(jsonText);
+        
+        // Check if it's a full backup or just graph data
+        if(importedData.graph){
+            // Full backup format
+            jsonData = importedData.graph;
+            nCnt = importedData.nodeCounter || nCnt;
+        } else {
+            // Just graph data
+            jsonData = importedData;
+        }
+        
+        // Read images from the images folder
+        const imagesFolder = zip.folder('images');
+        if(imagesFolder){
+            const imageFiles = [];
+            imagesFolder.forEach((relativePath, file) => {
+                imageFiles.push({path: relativePath, file: file});
+            });
+            
+            // Load all images
+            for(const {path, file} of imageFiles){
+                const nodeId = path.replace('.jpg', '').replace('.jpeg', '').replace('.png', '');
+                const imageData = await file.async('base64');
+                
+                // If this node exists in the JSON data, update its image
+                if(jsonData[nodeId]){
+                    jsonData[nodeId].image = `data:image/jpeg;base64,${imageData}`;
+                }
+            }
+        }
+        
+        // Import the data
+        g = jsonData;
+        
+        // Set first node as current location if no location set
+        if(!loc || !g[loc]){
+            const firstNode = Object.keys(g)[0];
+            loc = firstNode || null;
+        }
+        
+        // Save to local storage
+        await localforage.setItem('campusNav', g);
+        await localforage.setItem('nodeCounter', nCnt);
+        
+        // Update UI
+        updateView();
+        updateNodeList();
+        updateAdminPanel();
+        
+        showStatus(`Imported ${Object.keys(g).length} nodes successfully!`, 'success');
+        
+    } catch(err) {
+        console.error('Import error:', err);
+        showStatus('Import failed: ' + err.message, 'error');
+    }
+    
+    e.target.value = '';
+}
+
+function clearAllData(){
+    if(!confirm('Are you sure you want to delete ALL data?\n\nThis will remove all nodes and images permanently!')){
+        return;
+    }
+    
+    if(!confirm('This action CANNOT be undone!\n\nAre you absolutely sure?')){
+        return;
+    }
+    
+    g = {};
+    loc = null;
+    nCnt = 1;
+    preloadedImages = {};
+    
+    localforage.setItem('campusNav', g);
+    localforage.setItem('nodeCounter', nCnt);
+    
+    updateView();
+    updateNodeList();
+    updateAdminPanel();
+    
+    showStatus('All data cleared!', 'success');
 }
 
 window.onload=init;
