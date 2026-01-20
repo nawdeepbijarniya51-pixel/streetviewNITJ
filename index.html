@@ -253,11 +253,12 @@ function preloadImage(src){if(!src||preloadedImages[src])return;const img=new Im
 function preloadAdjacentImages(){const n=g[loc];if(!n)return;if(n.forward&&g[n.forward])preloadImage(g[n.forward].image);if(n.backward&&g[n.backward])preloadImage(g[n.backward].image);if(n.left&&g[n.left])preloadImage(g[n.left].image);if(n.right&&g[n.right])preloadImage(g[n.right].image);}
 async function init(){
     console.log('🚀 Initializing Campus Navigation System...');
+    console.log('📍 Current URL:', window.location.href);
     
     // First try to load from server (GitHub/Netlify deployment)
     try {
-        console.log('📡 Attempting to fetch campus_data.json...');
-        const response = await fetch('campus_data.json');
+        console.log('📡 Attempting to fetch campus_data.json from:', window.location.origin + '/campus_data.json');
+        const response = await fetch('campus_data.json?t=' + Date.now()); // Add cache buster
         console.log('📡 Fetch response:', response.status, response.statusText);
         
         if(response.ok){
@@ -276,13 +277,15 @@ async function init(){
             
             // Convert image paths to use the deployed images folder
             Object.keys(g).forEach(nodeId => {
+                const originalImage = g[nodeId].image;
+                
                 if(g[nodeId].image && !g[nodeId].image.startsWith('data:')) {
-                    // Image reference like "node_1.jpg" becomes "images/node_1.jpg"
+                    // If image doesn't start with 'images/', add it
                     if(!g[nodeId].image.startsWith('images/')){
                         g[nodeId].image = `images/${g[nodeId].image}`;
                     }
                 }
-                console.log(`Node ${nodeId} image:`, g[nodeId].image.substring(0, 50) + '...');
+                console.log(`📸 Node ${nodeId}: ${originalImage} -> ${g[nodeId].image}`);
             });
             
             // Set first node as current location
@@ -291,7 +294,8 @@ async function init(){
                 console.log('📍 Set current location to:', loc);
             }
             
-            console.log('✅ Loaded from server:', Object.keys(g).length, 'nodes');
+            console.log('✅ DATA LOADED FROM SERVER:', Object.keys(g).length, 'nodes');
+            console.log('📦 Graph data:', g);
             
             // Save to local storage for offline use
             await localforage.setItem('campusNav', g);
@@ -300,12 +304,12 @@ async function init(){
             
             console.log('💾 Saved to local storage');
         } else {
-            console.log('❌ campus_data.json not found on server (404)');
-            throw new Error('No campus_data.json found');
+            console.error('❌ campus_data.json not found on server (status:', response.status, ')');
+            throw new Error('No campus_data.json found - HTTP ' + response.status);
         }
     } catch(err) {
-        console.log('⚠️ Error loading from server:', err.message);
-        console.log('📂 Checking local storage...');
+        console.error('⚠️ Error loading from server:', err.message);
+        console.log('📂 Checking local storage as fallback...');
         
         // Check if we previously loaded from server
         const wasLoadedFromServer = await localforage.getItem('loadedFromServer');
@@ -320,8 +324,8 @@ async function init(){
                 loc = Object.keys(g)[0];
             }
         } else if(!wasLoadedFromServer) {
-            console.log('ℹ️ No data found - starting empty for admin to create nodes');
-            console.log('💡 TIP: If deploying, make sure campus_data.json is in the root directory');
+            console.log('ℹ️ No data found anywhere - starting empty');
+            console.log('💡 TIP: Make sure campus_data.json exists at:', window.location.origin + '/campus_data.json');
         }
         
         const localCounter = await localforage.getItem('nodeCounter');
@@ -330,7 +334,8 @@ async function init(){
         }
     }
     
-    console.log('🎨 Updating UI...');
+    console.log('🎨 Updating UI with', Object.keys(g).length, 'nodes...');
+    console.log('📍 Current location:', loc);
     updateView();
     updateAdminPanel();
     updateNodeList();
