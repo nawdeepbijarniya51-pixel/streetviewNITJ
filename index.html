@@ -252,11 +252,17 @@ const el={img:document.getElementById('currentImage'),locId:document.getElementB
 function preloadImage(src){if(!src||preloadedImages[src])return;const img=new Image();img.src=src;preloadedImages[src]=img;el.preload.appendChild(img);}
 function preloadAdjacentImages(){const n=g[loc];if(!n)return;if(n.forward&&g[n.forward])preloadImage(g[n.forward].image);if(n.backward&&g[n.backward])preloadImage(g[n.backward].image);if(n.left&&g[n.left])preloadImage(g[n.left].image);if(n.right&&g[n.right])preloadImage(g[n.right].image);}
 async function init(){
-    // First try to load from server (GitHub deployment)
+    console.log('🚀 Initializing Campus Navigation System...');
+    
+    // First try to load from server (GitHub/Netlify deployment)
     try {
+        console.log('📡 Attempting to fetch campus_data.json...');
         const response = await fetch('campus_data.json');
+        console.log('📡 Fetch response:', response.status, response.statusText);
+        
         if(response.ok){
             const serverData = await response.json();
+            console.log('✅ Successfully loaded campus_data.json:', serverData);
             
             // Check if it's a full backup or just graph data
             if(serverData.graph){
@@ -266,6 +272,8 @@ async function init(){
                 g = serverData;
             }
             
+            console.log('📊 Total nodes loaded:', Object.keys(g).length);
+            
             // Convert image paths to use the deployed images folder
             Object.keys(g).forEach(nodeId => {
                 if(g[nodeId].image && !g[nodeId].image.startsWith('data:')) {
@@ -274,11 +282,13 @@ async function init(){
                         g[nodeId].image = `images/${g[nodeId].image}`;
                     }
                 }
+                console.log(`Node ${nodeId} image:`, g[nodeId].image.substring(0, 50) + '...');
             });
             
             // Set first node as current location
             if(Object.keys(g).length > 0 && !loc){
                 loc = Object.keys(g)[0];
+                console.log('📍 Set current location to:', loc);
             }
             
             console.log('✅ Loaded from server:', Object.keys(g).length, 'nodes');
@@ -287,12 +297,15 @@ async function init(){
             await localforage.setItem('campusNav', g);
             await localforage.setItem('nodeCounter', nCnt);
             await localforage.setItem('loadedFromServer', true);
+            
+            console.log('💾 Saved to local storage');
         } else {
-            // No server file, check local storage
+            console.log('❌ campus_data.json not found on server (404)');
             throw new Error('No campus_data.json found');
         }
     } catch(err) {
-        console.log('No server data found, checking local storage...');
+        console.log('⚠️ Error loading from server:', err.message);
+        console.log('📂 Checking local storage...');
         
         // Check if we previously loaded from server
         const wasLoadedFromServer = await localforage.getItem('loadedFromServer');
@@ -307,8 +320,8 @@ async function init(){
                 loc = Object.keys(g)[0];
             }
         } else if(!wasLoadedFromServer) {
-            // Only show empty state if never loaded from server
-            console.log('ℹ️ No data - starting empty for admin to create nodes');
+            console.log('ℹ️ No data found - starting empty for admin to create nodes');
+            console.log('💡 TIP: If deploying, make sure campus_data.json is in the root directory');
         }
         
         const localCounter = await localforage.getItem('nodeCounter');
@@ -317,11 +330,13 @@ async function init(){
         }
     }
     
+    console.log('🎨 Updating UI...');
     updateView();
     updateAdminPanel();
     updateNodeList();
     preloadAdjacentImages();
     attachListeners();
+    console.log('✅ Initialization complete!');
 }
 function updateView(){
     const n=g[loc];
