@@ -45,7 +45,7 @@
     "forward": "node_8",
     "backward": null,
     "left": "node_6",
-    "right": null,
+    "right": "node_5",
     "image": "node_7.jpg"
   },
   "node_8": {
@@ -261,7 +261,7 @@
   "node_38": {
     "forward": "node_62",
     "backward": null,
-    "left": null,
+    "left": "node_34",
     "right": "node_35",
     "image": "node_38.jpg"
   },
@@ -359,8 +359,8 @@
   "node_52": {
     "forward": "node_53",
     "backward": null,
-    "left": null,
-    "right": "node_51",
+    "left": "node_51",
+    "right": null,
     "image": "node_52.jpg"
   },
   "node_53": {
@@ -423,7 +423,7 @@
     "forward": "node_18",
     "backward": "node_60",
     "left": null,
-    "right": null,
+    "right": "node_17",
     "image": "node_61.jpg"
   },
   "node_62": {
